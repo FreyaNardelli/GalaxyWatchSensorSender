@@ -1,0 +1,4 @@
+<resources>
+
+    <style name="Theme.WatchStreamer" parent="Theme.MaterialComponents.Light" />
+</resources>

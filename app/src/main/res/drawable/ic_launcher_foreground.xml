@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Watch Body (Ring) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 54, 27 A 27, 27 0 1 1 54, 81 A 27, 27 0 1 1 54, 27 Z M 54, 31 A 23, 23 0 1 0 54, 77 A 23, 23 0 1 0 54, 31 Z" />
+    <!-- Watch Straps -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,22h20v5h-20z M44,81h20v5h-20z" />
+    <!-- Graph Line / Stream Signal -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M40,54h6l4,-8l8,16l4,-8h6" />
+</vector>
