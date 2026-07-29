@@ -18,6 +18,13 @@ import android.database.sqlite.SQLiteOpenHelper
 class SensorBufferStore(context: Context) :
     SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION) {
 
+    init {
+        // Default SQLite auto-commits (with a full fsync) on every single insert, which
+        // is fine at 10 Hz but becomes the bottleneck once the send rate goes higher.
+        // WAL mode batches those syncs and lets reads happen concurrently with writes.
+        setWriteAheadLoggingEnabled(true)
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -30,7 +37,9 @@ class SensorBufferStore(context: Context) :
                 $COL_GYRO_X REAL NOT NULL,
                 $COL_GYRO_Y REAL NOT NULL,
                 $COL_GYRO_Z REAL NOT NULL,
-                $COL_HR REAL NOT NULL
+                $COL_HR REAL NOT NULL,
+                $COL_LAT REAL NOT NULL DEFAULT 0,
+                $COL_LON REAL NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -54,6 +63,8 @@ class SensorBufferStore(context: Context) :
                 put(COL_GYRO_Y, data.gyroY)
                 put(COL_GYRO_Z, data.gyroZ)
                 put(COL_HR, data.heartRate)
+                put(COL_LAT, data.latitude)
+                put(COL_LON, data.longitude)
             }
             writableDatabase.insert(TABLE, null, values)
         }
@@ -77,7 +88,9 @@ class SensorBufferStore(context: Context) :
                         gyroX = cursor.getFloat(cursor.getColumnIndexOrThrow(COL_GYRO_X)),
                         gyroY = cursor.getFloat(cursor.getColumnIndexOrThrow(COL_GYRO_Y)),
                         gyroZ = cursor.getFloat(cursor.getColumnIndexOrThrow(COL_GYRO_Z)),
-                        heartRate = cursor.getFloat(cursor.getColumnIndexOrThrow(COL_HR))
+                        heartRate = cursor.getFloat(cursor.getColumnIndexOrThrow(COL_HR)),
+                        latitude = cursor.getDouble(cursor.getColumnIndexOrThrow(COL_LAT)),
+                        longitude = cursor.getDouble(cursor.getColumnIndexOrThrow(COL_LON))
                     )
                     out.add(id to data)
                 }
@@ -110,7 +123,7 @@ class SensorBufferStore(context: Context) :
 
     companion object {
         private const val DB_NAME = "sensor_buffer.db"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
         private const val TABLE = "readings"
         private const val COL_ID = "id"
         private const val COL_TS = "ts"
@@ -121,6 +134,8 @@ class SensorBufferStore(context: Context) :
         private const val COL_GYRO_Y = "gyro_y"
         private const val COL_GYRO_Z = "gyro_z"
         private const val COL_HR = "heart_rate"
+        private const val COL_LAT = "latitude"
+        private const val COL_LON = "longitude"
 
         @Volatile private var instance: SensorBufferStore? = null
 

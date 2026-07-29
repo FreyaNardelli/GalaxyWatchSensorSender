@@ -21,6 +21,7 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.wear.compose.material3.*
 import com.example.watchstreamer.sensor.SensorService
 import com.example.watchstreamer.ui.HomeScreen
+import com.example.watchstreamer.ui.MeasureDistanceScreen
 import com.example.watchstreamer.ui.theme.WatchStreamerTheme
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
@@ -28,6 +29,9 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 object HomeRoute : NavKey
+
+@Serializable
+object MeasureDistanceRoute : NavKey
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalPermissionsApi::class)
@@ -37,7 +41,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             WatchStreamerTheme {
                 val permissions = remember {
-                    val list = mutableListOf(Manifest.permission.BODY_SENSORS)
+                    val list = mutableListOf(
+                        Manifest.permission.BODY_SENSORS,
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         list.add(Manifest.permission.POST_NOTIFICATIONS)
                     }
@@ -94,7 +102,14 @@ fun WatchApp() {
             onBack = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) },
             entryProvider = entryProvider {
                 entry<HomeRoute> {
-                    HomeScreen()
+                    HomeScreen(
+                        onMeasureDistance = { backStack.add(MeasureDistanceRoute) }
+                    )
+                }
+                entry<MeasureDistanceRoute> {
+                    MeasureDistanceScreen(
+                        onBack = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) }
+                    )
                 }
             }
         )

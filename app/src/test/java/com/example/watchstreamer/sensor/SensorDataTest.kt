@@ -16,7 +16,9 @@ class SensorDataTest {
             gyroX = 4.4f,
             gyroY = 5.5f,
             gyroZ = 6.6f,
-            heartRate = 77f
+            heartRate = 77f,
+            latitude = 37.422,
+            longitude = -122.084
         )
 
         val payload = data.toPayloadString()
@@ -28,15 +30,18 @@ class SensorDataTest {
     @Test
     fun toListPayloadString_isCorrect() {
         val data = SensorData(
+            timestamp = 1000L,
             accelX = 1.1f,
             accelY = 2.2f,
             accelZ = 3.3f,
             gyroX = 4.4f,
             gyroY = 5.5f,
             gyroZ = 6.6f,
-            heartRate = 77f
+            heartRate = 77f,
+            latitude = 37.422,
+            longitude = -122.084
         )
-        val expected = "[1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 77.0]"
+        val expected = "[1000, 1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 77.0, 37.422, -122.084]"
         assertEquals(expected, data.toListPayloadString())
     }
 

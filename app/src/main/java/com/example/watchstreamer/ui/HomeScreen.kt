@@ -4,9 +4,12 @@ package com.example.watchstreamer.ui
 import com.example.watchstreamer.sensor.SensorService
 import com.example.watchstreamer.sensor.StreamStatus
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -41,13 +44,36 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import kotlinx.coroutines.flow.StateFlow
 
 @Composable
-fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
+fun HomeScreen(viewModel: HomeViewModel = viewModel(), onMeasureDistance: () -> Unit = {}) {
     val context = LocalContext.current
     val scrollState = rememberTransformingLazyColumnState()
     var ipAddress by remember { mutableStateOf("10.142.47.206") }
 
+    // Accel + gyro always share imuRateHz; send rate (buffer/UDP/graph cadence) is
+    // independent. Both floor out at SensorService.MIN_RATE_HZ (30 Hz).
+    var imuRateHz by remember { mutableStateOf(SensorService.getPersistedImuRateHz(context)) }
+    var sendRateHz by remember { mutableStateOf(SensorService.getPersistedSendRateHz(context)) }
+
+    // GPS update rate (Hz) — independent of the IMU/send rates above.
+    var gpsRateHz by remember { mutableStateOf(SensorService.getPersistedGpsRateHz(context)) }
+
+    fun cycleRate(current: Int): Int {
+        val options = SensorService.AVAILABLE_RATES_HZ
+        val nextIndex = (options.indexOf(current).let { if (it == -1) 0 else it } + 1) % options.size
+        return options[nextIndex]
+    }
+
+    fun cycleGpsRate(current: Int): Int {
+        val options = SensorService.AVAILABLE_GPS_RATES_HZ
+        val nextIndex = (options.indexOf(current).let { if (it == -1) 0 else it } + 1) % options.size
+        return options[nextIndex]
+    }
+
     val streamStatus by SensorService.streamStatus.collectAsState()
     val pendingCount by SensorService.pendingCount.collectAsState()
+    val location by SensorService.location.collectAsState()
+    val locationSettingEnabled by SensorService.locationSettingEnabled.collectAsState()
+    val sensorsPaused by SensorService.sensorsPaused.collectAsState()
     val isStreaming = streamStatus != StreamStatus.IDLE
 
     val transformationSpec = rememberTransformationSpec()
@@ -59,13 +85,13 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
         scrollState = scrollState,
         edgeButton = {
             EdgeButton(
-                onClick = { if (isStreaming) stopStream() else startStream() },
+                onClick = { if (!sensorsPaused) { if (isStreaming) stopStream() else startStream() } },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isStreaming) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     contentColor = if (isStreaming) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary
                 )
             ) {
-                Text(text = if (isStreaming) "STOP" else "START")
+                Text(text = if (sensorsPaused) "PAUSED" else if (isStreaming) "STOP" else "START")
             }
         }
     ) {
@@ -117,8 +143,60 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             }
 
             item {
+                Spacer(modifier = Modifier.height(4.dp))
+                SectionHeader(text = "SAMPLING RATES", color = MaterialTheme.colorScheme.primary)
+            }
+            item {
+                RateSelector(
+                    label = "IMU (accel + gyro)",
+                    valueHz = imuRateHz,
+                    onTap = {
+                        val next = cycleRate(imuRateHz)
+                        imuRateHz = next
+                        SensorService.updateRates(context, next, sendRateHz)
+                    }
+                )
+            }
+            item {
+                RateSelector(
+                    label = "Send (buffer + UDP)",
+                    valueHz = sendRateHz,
+                    onTap = {
+                        val next = cycleRate(sendRateHz)
+                        sendRateHz = next
+                        SensorService.updateRates(context, imuRateHz, next)
+                    }
+                )
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        if (sensorsPaused) SensorService.resumeSensors(context) else SensorService.pauseSensors(context)
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    colors = if (sensorsPaused) {
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    } else {
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                ) {
+                    Text(text = if (sensorsPaused) "Resume Sensors" else "Pause Sensors")
+                }
+            }
+
+            item {
                 Button(
                     onClick = { if (isStreaming) stopStream() else startStream() },
+                    enabled = !sensorsPaused,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                         .transformedHeight(this, transformationSpec),
                     transformation = SurfaceTransformation(transformationSpec),
@@ -134,10 +212,11 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             }
 
             item {
-                val statusText = when (streamStatus) {
-                    StreamStatus.LIVE -> "Streaming..."
-                    StreamStatus.BUFFERING -> "Buffering • $pendingCount queued"
-                    StreamStatus.IDLE -> null
+                val statusText = when {
+                    sensorsPaused -> "Sensors paused — battery saving"
+                    streamStatus == StreamStatus.LIVE -> "Streaming..."
+                    streamStatus == StreamStatus.BUFFERING -> "Buffering • $pendingCount queued"
+                    else -> null
                 }
                 if (statusText != null) {
                     Text(
@@ -170,6 +249,92 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                 SectionHeader(text = "HEART RATE", color = MaterialTheme.colorScheme.tertiary)
             }
             item { SensorGraphCard(viewModel.heartRate, "BPM", Color(0xFFFF4444), maxRange = 200f) }
+
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                SectionHeader(text = "GPS", color = MaterialTheme.colorScheme.primary)
+            }
+            item {
+                RateSelector(
+                    label = "GPS Update Rate",
+                    valueHz = gpsRateHz,
+                    onTap = {
+                        val next = cycleGpsRate(gpsRateHz)
+                        gpsRateHz = next
+                        SensorService.updateGpsRate(context, next)
+                    }
+                )
+            }
+            item {
+                Text(
+                    text = when {
+                        sensorsPaused -> "Paused"
+                        location != null -> "%.5f, %.5f".format(location!!.latitude, location!!.longitude)
+                        else -> "Waiting for fix…"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                        .transformedHeight(this, transformationSpec)
+                )
+            }
+
+            if (!sensorsPaused && !locationSettingEnabled) {
+                item {
+                    Text(
+                        text = "Location is turned off on this watch — a fix can never arrive until it's enabled",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                            .transformedHeight(this, transformationSpec)
+                    )
+                }
+                item {
+                    Button(
+                        onClick = {
+                            context.startActivity(
+                                Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                            .transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec)
+                    ) {
+                        Text(text = "Open Location Settings")
+                    }
+                }
+            }
+
+            if (!sensorsPaused) {
+                item {
+                    Button(
+                        onClick = { SensorService.forceLocationRefresh(context) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                            .transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    ) {
+                        Text(text = "Force GPS Reload")
+                    }
+                }
+            }
+
+            item {
+                Button(
+                    onClick = onMeasureDistance,
+                    enabled = !sensorsPaused,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec)
+                ) {
+                    Text(text = "Measure Distance")
+                }
+            }
 
             item { Spacer(modifier = Modifier.height(48.dp)) }
         }
@@ -212,6 +377,35 @@ fun SensorGraphCard(valuesFlow: StateFlow<List<Float>>, label: String, color: Co
         Column {
             Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             SensorGraph(values = values, modifier = Modifier.fillMaxWidth().height(50.dp), color = color, maxRange = maxRange)
+        }
+    }
+}
+
+/**
+ * Tap-to-cycle chip for a single rate setting, displayed as "$valueHz Hz".
+ * Used by the IMU, send, and GPS rate pickers — each cycles through its own
+ * list of Hz options on tap.
+ */
+@Composable
+fun RateSelector(label: String, valueHz: Int, onTap: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxWidth(0.9f).clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(onClick = onTap)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = "$valueHz Hz",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }

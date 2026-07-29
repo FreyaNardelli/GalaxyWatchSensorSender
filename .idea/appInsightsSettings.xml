@@ -8,10 +8,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.example.watchstreamer" />
+                  <option name="mobileSdkAppId" value="1:428390107674:android:86db6f0f1a77cf64681fa3" />
+                  <option name="projectId" value="poms-project-5ac43" />
+                  <option name="projectNumber" value="428390107674" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />
